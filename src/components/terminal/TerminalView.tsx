@@ -50,6 +50,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => {
     return localStorage.getItem("codex_terminal_theme") || "ghostty";
   });
+  const [isThemeMenuOpen, setIsThemeMenuOpen] = useState(false);
+  const themeMenuRef = useRef<HTMLDivElement>(null);
   const [viewMode, setViewMode] = useState<"chat" | "split" | "terminal">(() => {
     return (localStorage.getItem("codex_view_mode") as any) || "chat";
   });
@@ -275,14 +277,28 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     localStorage.setItem("codex_terminal_theme", themeId);
   };
 
+  // Close theme dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (themeMenuRef.current && !themeMenuRef.current.contains(e.target as Node)) {
+        setIsThemeMenuOpen(false);
+      }
+    };
+    if (isThemeMenuOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isThemeMenuOpen]);
+
   return (
     <div
-      className={`relative w-full h-full flex flex-col bg-[#0c0e14] ${
+      className={`relative w-full h-full flex flex-col ${
         isActive ? "block" : "hidden"
       }`}
+      style={{ backgroundColor: activeTheme.background }}
     >
       {/* Top Terminal Toolbar */}
-      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#202432] bg-[#11131a] text-zinc-300 text-xs shrink-0 select-none">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-[#202432] bg-[#11131a]/90 backdrop-blur-xs text-zinc-300 text-xs shrink-0 select-none">
         {/* Left: Session metadata & font controls */}
         <div className="flex items-center gap-2">
           <div className="flex items-center gap-1.5 font-medium text-zinc-200">
@@ -295,39 +311,80 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
           <div className="h-3.5 w-px bg-zinc-700/60 mx-1" />
 
-          {/* Font Controls */}
+          {/* Font Controls (Zoom terminal & conversa) */}
           <div className="flex items-center gap-0.5 bg-[#171a24] border border-[#272b38] rounded-md px-1 py-0.5">
             <button
               onClick={() => setFontSize((s) => Math.max(10, s - 1))}
               className="p-1 hover:text-white rounded hover:bg-zinc-700/50 transition cursor-pointer"
-              title="Diminuir fonte (A-)"
+              title="Diminuir zoom da fonte (A-)"
             >
               <ZoomOut className="w-3 h-3" />
             </button>
-            <span className="px-1 text-[11px] font-mono text-zinc-400">{fontSize}px</span>
+            <span className="px-1 text-[11px] font-mono text-zinc-300 font-semibold">{fontSize}px</span>
             <button
               onClick={() => setFontSize((s) => Math.min(24, s + 1))}
               className="p-1 hover:text-white rounded hover:bg-zinc-700/50 transition cursor-pointer"
-              title="Aumentar fonte (A+)"
+              title="Aumentar zoom da fonte (A+)"
             >
               <ZoomIn className="w-3 h-3" />
             </button>
           </div>
 
-          {/* Theme Selector */}
-          <div className="flex items-center gap-1 bg-[#171a24] border border-[#272b38] rounded-md px-1.5 py-0.5">
-            <Palette className="w-3 h-3 text-zinc-400" />
-            <select
-              value={currentThemeId}
-              onChange={(e) => handleThemeChange(e.target.value)}
-              className="bg-transparent text-[11px] text-zinc-300 focus:outline-none cursor-pointer pr-1"
+          {/* Custom Theme Selector Dropdown (Never white background!) */}
+          <div className="relative" ref={themeMenuRef}>
+            <button
+              onClick={() => setIsThemeMenuOpen((v) => !v)}
+              className="flex items-center gap-1.5 bg-[#171a24] hover:bg-[#202534] border border-[#272b38] rounded-md px-2 py-1 text-[11px] text-zinc-200 transition cursor-pointer shadow-xs"
+              title="Alterar tema de cores do terminal e da conversa"
             >
-              {Object.values(TERMINAL_THEMES).map((t) => (
-                <option key={t.id} value={t.id} className="bg-[#171a24] text-zinc-200">
-                  {t.name}
-                </option>
-              ))}
-            </select>
+              <Palette className="w-3 h-3 text-cyan-400" />
+              <span
+                className="w-2.5 h-2.5 rounded-full border border-white/30 shrink-0"
+                style={{ backgroundColor: activeTheme.background }}
+              />
+              <span className="font-medium text-zinc-200 hidden sm:inline">
+                {TERMINAL_THEMES[currentThemeId]?.name || "Tema"}
+              </span>
+              <ChevronDown
+                className={`w-3 h-3 text-zinc-400 transition-transform duration-150 ${
+                  isThemeMenuOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+
+            {isThemeMenuOpen && (
+              <div className="absolute top-full left-0 mt-1 w-52 py-1.5 bg-[#131622] border border-[#2a3044] rounded-xl shadow-2xl z-50 animate-in fade-in slide-in-from-top-1 backdrop-blur-md">
+                <div className="px-3 py-1 text-[10px] font-semibold tracking-wider text-zinc-400 uppercase border-b border-[#202636] mb-1">
+                  Temas de Cores
+                </div>
+                {Object.values(TERMINAL_THEMES).map((t) => {
+                  const isSelected = t.id === currentThemeId;
+                  return (
+                    <button
+                      key={t.id}
+                      onClick={() => {
+                        handleThemeChange(t.id);
+                        setIsThemeMenuOpen(false);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-1.5 text-xs text-left transition cursor-pointer ${
+                        isSelected
+                          ? "bg-blue-600/25 text-white font-medium"
+                          : "text-zinc-300 hover:bg-[#1e2334] hover:text-white"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full border border-white/20 shrink-0 shadow-xs"
+                          style={{ backgroundColor: t.theme.background }}
+                        />
+                        <span>{t.name}</span>
+                      </div>
+                      {isSelected && <Check className="w-3.5 h-3.5 text-blue-400 shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -501,6 +558,8 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
               session={session}
               onSendPrompt={handleSendPromptFromCompanion}
               terminalOutput={outputBuffer}
+              fontSize={fontSize}
+              theme={activeTheme}
             />
           </div>
         )}
