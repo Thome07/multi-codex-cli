@@ -6,86 +6,84 @@ interface CodeBlockProps {
   language?: string;
 }
 
-// Lightweight, safe syntax highlighter using regex tokenization
+// Escape HTML entities
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+// Single-pass lexical tokenizer: matches source code directly and outputs safe HTML
+// Prevents regex from ever matching generated <span class="..."> attributes
 function highlightSyntax(rawCode: string, lang?: string): string {
   const normalizedLang = (lang || "").toLowerCase().trim();
+  const isHashComment = ["py", "python", "bash", "sh", "yaml", "yml", "dockerfile"].includes(normalizedLang);
 
-  // Escape HTML entities first
-  const escapeHtml = (str: string) =>
-    str
-      .replace(/&/g, "&amp;")
-      .replace(/</g, "&lt;")
-      .replace(/>/g, "&gt;");
+  const commentPattern = isHashComment
+    ? "(#[^\\n]*)"
+    : "(\\/\\/[^\\n]*|\\/\\*[\\s\\S]*?\\*\\/)";
 
-  const lines = rawCode.split("\n");
+  const stringPattern = '("(?:\'\'|\\\\.|[^"\\\\])*"|\'(?:\'\'|\\\\.|[^\'\\\\])*\'|`(?:\'\'|\\\\.|[^`\\\\])*`)';
 
-  const highlightedLines = lines.map((line) => {
-    // Check for full line or end of line comments
-    let commentPart = "";
-    let codePart = line;
+  const keywordPattern =
+    "\\b(const|let|var|function|return|if|else|elif|for|while|import|export|from|as|class|interface|type|fn|pub|struct|enum|impl|match|def|async|await|try|except|finally|catch|self|this|mut|use|mod|trait|where|select|insert|update|delete|echo|sudo|cargo|npm|npx|lambda|pass|raise|yield|with|in|is|not|and|or|break|continue)\\b";
 
-    const commentIndexSlash = line.indexOf("//");
-    const commentIndexHash = normalizedLang === "python" || normalizedLang === "bash" || normalizedLang === "sh" 
-      ? line.indexOf("#") 
-      : -1;
+  const booleanPattern = "\\b(True|False|true|false|None|null|undefined|Some|Ok|Err)\\b";
+  const numberPattern = "\\b(\\d+(?:\\.\\d+)?(?:[eE][+-]?\\d+)?)\\b";
+  const functionPattern = "\\b([a-zA-Z_][a-zA-Z0-9_]*)(?=\\s*\\()";
+  const typePattern = "\\b([A-Z][a-zA-Z0-9_]*)\\b";
 
-    let commentIdx = -1;
-    if (commentIndexSlash !== -1 && commentIndexHash !== -1) {
-      commentIdx = Math.min(commentIndexSlash, commentIndexHash);
-    } else if (commentIndexSlash !== -1) {
-      commentIdx = commentIndexSlash;
-    } else if (commentIndexHash !== -1) {
-      commentIdx = commentIndexHash;
+  const combinedRegex = new RegExp(
+    [
+      commentPattern,   // group 1
+      stringPattern,    // group 2
+      keywordPattern,   // group 3
+      booleanPattern,   // group 4
+      numberPattern,    // group 5
+      functionPattern,  // group 6
+      typePattern,      // group 7
+    ].join("|"),
+    "g"
+  );
+
+  let result = "";
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = combinedRegex.exec(rawCode)) !== null) {
+    if (match.index > lastIndex) {
+      result += escapeHtml(rawCode.slice(lastIndex, match.index));
     }
 
-    if (commentIdx !== -1) {
-      codePart = line.slice(0, commentIdx);
-      commentPart = line.slice(commentIdx);
+    const [matchedText, comment, str, kw, bool, num, fn, typ] = match;
+
+    if (comment !== undefined) {
+      result += `<span class="text-zinc-500 italic">${escapeHtml(comment)}</span>`;
+    } else if (str !== undefined) {
+      result += `<span class="text-emerald-400 font-medium">${escapeHtml(str)}</span>`;
+    } else if (kw !== undefined) {
+      result += `<span class="text-pink-400 font-semibold">${escapeHtml(kw)}</span>`;
+    } else if (bool !== undefined) {
+      result += `<span class="text-amber-300 font-semibold">${escapeHtml(bool)}</span>`;
+    } else if (num !== undefined) {
+      result += `<span class="text-amber-400 font-mono">${escapeHtml(num)}</span>`;
+    } else if (fn !== undefined) {
+      result += `<span class="text-cyan-400 font-medium">${escapeHtml(fn)}</span>`;
+    } else if (typ !== undefined) {
+      result += `<span class="text-purple-400 font-medium">${escapeHtml(typ)}</span>`;
+    } else {
+      result += escapeHtml(matchedText);
     }
 
-    let processed = escapeHtml(codePart);
+    lastIndex = match.index + matchedText.length;
+  }
 
-    // 1. Strings: "...", '...', `...`
-    processed = processed.replace(
-      /(&quot;.*?&quot;|&#39;.*?&#39;|`.*?`|"(?:\\"|[^"])*"|'(?:\\'|[^'])*')/g,
-      '<span class="text-emerald-400 font-medium">$1</span>'
-    );
+  if (lastIndex < rawCode.length) {
+    result += escapeHtml(rawCode.slice(lastIndex));
+  }
 
-    // 2. Keywords
-    const keywords =
-      /\b(const|let|var|function|return|if|else|for|while|import|export|from|as|class|interface|type|fn|pub|struct|enum|impl|match|def|async|await|try|catch|self|this|mut|use|mod|trait|where|select|from|where|insert|update|delete|echo|sudo|cargo|npm|npx)\b/g;
-    processed = processed.replace(
-      keywords,
-      '<span class="text-pink-400 font-semibold">$1</span>'
-    );
-
-    // 3. Types and PascalCase names
-    processed = processed.replace(
-      /\b([A-Z][a-zA-Z0-9_]*)\b/g,
-      '<span class="text-purple-400 font-medium">$1</span>'
-    );
-
-    // 4. Function calls
-    processed = processed.replace(
-      /\b([a-zA-Z0-9_]+)(?=\s*\()/g,
-      '<span class="text-cyan-400 font-medium">$1</span>'
-    );
-
-    // 5. Numbers and booleans
-    processed = processed.replace(
-      /\b(\d+(\.\d+)?|true|false|null|undefined|None|Some|Ok|Err)\b/g,
-      '<span class="text-amber-400 font-mono">$1</span>'
-    );
-
-    // Reattach comment if present
-    if (commentPart) {
-      processed += `<span class="text-zinc-500 italic">${escapeHtml(commentPart)}</span>`;
-    }
-
-    return processed;
-  });
-
-  return highlightedLines.join("\n");
+  return result;
 }
 
 export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language }) => {
