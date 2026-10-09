@@ -254,11 +254,13 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   };
 
   const handleSendPromptFromCompanion = (prompt: string) => {
-    // Send prompt with carriage return to PTY
-    api.writeSession(session.id, prompt + "\n").catch((e) => {
-      console.error("Falha ao enviar prompt:", e);
+    const text = prompt.trim();
+    if (!text) return;
+    // Em terminais Linux PTY / TUI interativo, o caractere de aceitação do Enter é '\r'
+    const formatted = text.replace(/\r?\n/g, "\n") + "\r";
+    api.writeSession(session.id, formatted).catch((e) => {
+      console.error("Falha ao enviar prompt para o PTY:", e);
     });
-    termRef.current?.focus();
   };
 
   const handleThemeChange = (themeId: string) => {
@@ -473,12 +475,12 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
       <div className="flex-1 flex w-full h-full min-h-0 overflow-hidden">
         {/* Terminal Area */}
         <div
-          className={`h-full overflow-hidden p-3.5 transition-all ${
+          className={`h-full overflow-hidden transition-all ${
             viewMode === "terminal"
-              ? "flex-1 block"
+              ? "flex-1 block p-3.5"
               : viewMode === "split"
-              ? "w-[48%] block border-r border-[#202534]"
-              : "hidden"
+              ? "w-[48%] block border-r border-[#202534] p-3.5"
+              : "absolute -left-[9999px] top-0 w-[800px] h-[600px] opacity-0 pointer-events-none"
           }`}
           style={{ backgroundColor: activeTheme.background }}
         >

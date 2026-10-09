@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useMemo } from "react";
 import {
   Send,
   User,
@@ -112,14 +112,27 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     loadMessages();
   }, [session.profileId]);
 
-  // Periodic poll to catch newly stored Codex messages (every 2.5s)
+  // Check if we are waiting for Codex to answer
+  const isWaitingResponse = useMemo(() => {
+    if (messages.length === 0) return false;
+    const lastMsg = messages[messages.length - 1];
+    return lastMsg.role === "user";
+  }, [messages]);
+
+  // Periodic poll to catch newly stored Codex messages (every 1s if waiting, 3s otherwise)
   useEffect(() => {
+    const pollInterval = isWaitingResponse ? 1000 : 3000;
     const interval = setInterval(() => {
       api.getProfileMessages(session.profileId)
         .then((latest) => {
           if (latest && latest.length > 0) {
             setMessages((prev) => {
-              if (latest.length !== prev.length || (latest[latest.length - 1]?.id !== prev[prev.length - 1]?.id)) {
+              // If there are more messages or content changed
+              if (
+                latest.length !== prev.length ||
+                latest[latest.length - 1]?.id !== prev[prev.length - 1]?.id ||
+                latest[latest.length - 1]?.text !== prev[prev.length - 1]?.text
+              ) {
                 return latest;
               }
               return prev;
@@ -127,12 +140,12 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           }
         })
         .catch(() => {});
-    }, 2500);
+    }, pollInterval);
 
     return () => clearInterval(interval);
-  }, [session.profileId]);
+  }, [session.profileId, isWaitingResponse]);
 
-  // Also auto-refresh when terminal output receives activity
+  // Auto-refresh when terminal output receives activity
   useEffect(() => {
     if (!terminalOutput) return;
     const timer = setTimeout(() => {
@@ -143,7 +156,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
           }
         })
         .catch(() => {});
-    }, 1200);
+    }, 800);
 
     return () => clearTimeout(timer);
   }, [terminalOutput, session.profileId]);
@@ -153,18 +166,19 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     if (autoScroll && messagesEndRef.current) {
       messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages, autoScroll]);
+  }, [messages, autoScroll, isWaitingResponse]);
 
   const handleSend = () => {
-    if (!inputPrompt.trim()) return;
-    onSendPrompt(inputPrompt);
+    const text = inputPrompt.trim();
+    if (!text) return;
+    onSendPrompt(text);
     setInputPrompt("");
 
-    // Optimistically add the user message to the UI
+    // Optimistically add user message to the UI
     const optimisticMessage: ChatMessage = {
       id: "opt-" + Date.now(),
       role: "user",
-      text: inputPrompt,
+      text: text,
       timestampMs: Date.now(),
     };
     setMessages((prev) => [...prev, optimisticMessage]);
@@ -318,6 +332,25 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
             );
           })
         )}
+
+        {/* Animated waiting indicator when user prompt is submitted */}
+        {isWaitingResponse && (
+          <div className="flex flex-col gap-1 items-start animate-in fade-in duration-200">
+            <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-600/25 text-emerald-300 border border-emerald-500/40 text-[11px] font-semibold select-none">
+              <Bot className="w-3 h-3 text-emerald-300" />
+              <span>OPENAI CODEX</span>
+            </div>
+            <div className="bg-[#11141e] border border-emerald-500/30 rounded-2xl rounded-tl-xs px-4 py-3 text-zinc-200 text-xs flex items-center gap-3 shadow-lg">
+              <div className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: "150ms" }} />
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" style={{ animationDelay: "300ms" }} />
+              </div>
+              <span className="text-zinc-300 font-medium">Codex está processando sua resposta...</span>
+            </div>
+          </div>
+        )}
+
         <div ref={messagesEndRef} />
       </div>
 
@@ -328,32 +361,53 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
             value={inputPrompt}
             onChange={(e) => setInputPrompt(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                handleSend();
+              if (e.key === "Enter") {
+                if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                  // Ctrl+Enter or Meta+Enter: insert newline at cursor
+                  if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    const target = e.currentTarget;
+                    const start = target.selectionStart;
+                    const end = target.selectionEnd;
+                    const val = target.value;
+                    setInputPrompt(val.substring(0, start) + "\n" + val.substring(end));
+                    setTimeout(() => {
+                      target.selectionStart = target.selectionEnd = start + 1;
+                    }, 0);
+                  }
+                  // Shift+Enter inserts newline natively
+                } else {
+                  // Plain Enter: submit prompt!
+                  e.preventDefault();
+                  handleSend();
+                }
               }
             }}
-            placeholder="Digite sua mensagem para o Codex... (Ctrl+Enter para enviar)"
+            placeholder="Digite sua mensagem para o Codex... (Enter para enviar, Ctrl+Enter para pular linha)"
             rows={2}
             className="w-full bg-transparent p-3 text-xs md:text-sm text-zinc-100 placeholder-zinc-500 focus:outline-none resize-none font-sans"
           />
 
           <div className="flex items-center justify-between px-3 py-2 border-t border-[#1c2130] bg-[#0e1017] rounded-b-xl select-none">
-            <div className="flex items-center gap-2 text-[11px] text-zinc-400">
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
               <span className="hidden sm:inline">Pressione</span>
+              <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
+                Enter
+              </kbd>
+              <span className="hidden sm:inline">para enviar •</span>
               <kbd className="px-1.5 py-0.5 text-[10px] font-mono rounded bg-zinc-800 text-zinc-300 border border-zinc-700">
                 Ctrl + Enter
               </kbd>
-              <span className="hidden sm:inline">para enviar diretamente ao Codex</span>
+              <span className="hidden sm:inline">para pular linha</span>
             </div>
 
             <div className="flex items-center gap-2">
               <button
                 onClick={handleSend}
                 disabled={!inputPrompt.trim()}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer shadow-md ${
+                className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer shadow-md ${
                   inputPrompt.trim()
-                    ? "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30"
+                    ? "bg-blue-600 hover:bg-blue-500 text-white shadow-blue-600/30 font-semibold"
                     : "bg-zinc-800 text-zinc-500 cursor-not-allowed"
                 }`}
               >
