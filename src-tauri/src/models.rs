@@ -148,3 +148,12 @@ pub struct PtyExitPayload {
     pub session_id: String,
     pub exit_code: Option<i32>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ChatMessage {
+    pub id: String,
+    pub role: String, // "user" | "assistant"
+    pub text: String,
+    pub timestamp_ms: i64,
+}

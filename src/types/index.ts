@@ -102,3 +102,10 @@ export interface PtyExitPayload {
   sessionId: string;
   exitCode?: number | null;
 }
+
+export interface ChatMessage {
+  id: string;
+  role: "user" | "assistant";
+  text: string;
+  timestampMs: number;
+}

@@ -3,6 +3,7 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import type {
   AppSettings,
   AuthStatus,
+  ChatMessage,
   CodexDetectionResult,
   CodexUpdateResult,
   CreateProfileRequest,
@@ -63,6 +64,10 @@ export const api = {
 
   logoutProfile: async (id: string): Promise<void> => {
     return await invoke<void>("logout_profile", { id });
+  },
+
+  getProfileMessages: async (profileId: string): Promise<ChatMessage[]> => {
+    return await invoke<ChatMessage[]>("get_profile_messages", { profileId });
   },
 
   // Sessions & PTY

@@ -6,7 +6,7 @@ import { SearchAddon } from "@xterm/addon-search";
 import { api } from "../../services/api";
 import type { AppSettings, SessionInfo } from "../../types";
 import { TERMINAL_THEMES } from "./themes";
-import { MarkdownCompanion } from "./MarkdownCompanion";
+import { ConversationView } from "./ConversationView";
 import {
   Terminal as TerminalIcon,
   Search,
@@ -21,7 +21,7 @@ import {
   ZoomIn,
   ZoomOut,
   Palette,
-  BookOpen,
+  MessageSquare,
 } from "lucide-react";
 
 interface TerminalViewProps {
@@ -50,7 +50,9 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
   const [currentThemeId, setCurrentThemeId] = useState<string>(() => {
     return localStorage.getItem("codex_terminal_theme") || "ghostty";
   });
-  const [viewMode, setViewMode] = useState<"terminal" | "split" | "markdown">("terminal");
+  const [viewMode, setViewMode] = useState<"chat" | "split" | "terminal">(() => {
+    return (localStorage.getItem("codex_view_mode") as any) || "chat";
+  });
   const [outputBuffer, setOutputBuffer] = useState<string>("");
   const [copiedAll, setCopiedAll] = useState(false);
 
@@ -358,43 +360,52 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
 
           <div className="h-3.5 w-px bg-zinc-700/60 mx-1" />
 
-          {/* View Mode Toggle: Terminal / Split / Markdown */}
+          {/* View Mode Toggle: Conversa / Split / Terminal */}
           <div className="flex items-center bg-[#171a24] border border-[#272b38] rounded-md p-0.5">
             <button
-              onClick={() => setViewMode("terminal")}
-              className={`p-1 rounded text-[11px] flex items-center gap-1 transition cursor-pointer ${
-                viewMode === "terminal"
+              onClick={() => {
+                setViewMode("chat");
+                localStorage.setItem("codex_view_mode", "chat");
+              }}
+              className={`p-1 px-1.5 rounded text-[11px] flex items-center gap-1 transition cursor-pointer ${
+                viewMode === "chat"
                   ? "bg-blue-600 text-white font-medium shadow-xs"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Visualização: Apenas Terminal"
+              title="Visualização: Modo Conversa (Cores destacadas, Você vs Codex, Destaque de código)"
             >
-              <Maximize2 className="w-3 h-3" />
-              <span className="hidden md:inline">Terminal</span>
+              <MessageSquare className="w-3 h-3 text-blue-300" />
+              <span className="hidden md:inline font-medium">Conversa</span>
             </button>
             <button
-              onClick={() => setViewMode("split")}
-              className={`p-1 rounded text-[11px] flex items-center gap-1 transition cursor-pointer ${
+              onClick={() => {
+                setViewMode("split");
+                localStorage.setItem("codex_view_mode", "split");
+              }}
+              className={`p-1 px-1.5 rounded text-[11px] flex items-center gap-1 transition cursor-pointer ${
                 viewMode === "split"
                   ? "bg-blue-600 text-white font-medium shadow-xs"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Visualização: Split (Terminal + Markdown)"
+              title="Visualização: Split (Terminal PTY + Conversa)"
             >
               <Columns className="w-3 h-3" />
-              <span className="hidden md:inline">Split</span>
+              <span className="hidden md:inline font-medium">Split</span>
             </button>
             <button
-              onClick={() => setViewMode("markdown")}
-              className={`p-1 rounded text-[11px] flex items-center gap-1 transition cursor-pointer ${
-                viewMode === "markdown"
+              onClick={() => {
+                setViewMode("terminal");
+                localStorage.setItem("codex_view_mode", "terminal");
+              }}
+              className={`p-1 px-1.5 rounded text-[11px] flex items-center gap-1 transition cursor-pointer ${
+                viewMode === "terminal"
                   ? "bg-blue-600 text-white font-medium shadow-xs"
                   : "text-zinc-400 hover:text-zinc-200"
               }`}
-              title="Visualização: Apenas Markdown"
+              title="Visualização: Apenas Terminal PTY"
             >
-              <BookOpen className="w-3 h-3" />
-              <span className="hidden md:inline">Markdown</span>
+              <Maximize2 className="w-3 h-3" />
+              <span className="hidden md:inline font-medium">Terminal</span>
             </button>
           </div>
         </div>
@@ -458,7 +469,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
         </div>
       )}
 
-      {/* Main Workspace: Terminal and/or Markdown */}
+      {/* Main Workspace: Terminal and/or Conversation */}
       <div className="flex-1 flex w-full h-full min-h-0 overflow-hidden">
         {/* Terminal Area */}
         <div
@@ -466,7 +477,7 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
             viewMode === "terminal"
               ? "flex-1 block"
               : viewMode === "split"
-              ? "w-[56%] block border-r border-[#242838]"
+              ? "w-[48%] block border-r border-[#202534]"
               : "hidden"
           }`}
           style={{ backgroundColor: activeTheme.background }}
@@ -474,14 +485,11 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
           <div ref={containerRef} className="w-full h-full overflow-hidden" />
         </div>
 
-        {/* Markdown Companion Panel */}
-        {(viewMode === "split" || viewMode === "markdown") && (
-          <div
-            className={`h-full overflow-hidden ${
-              viewMode === "markdown" ? "flex-1" : "flex-1"
-            }`}
-          >
-            <MarkdownCompanion
+        {/* Rich Conversation Panel */}
+        {(viewMode === "chat" || viewMode === "split") && (
+          <div className="flex-1 h-full min-h-0 overflow-hidden">
+            <ConversationView
+              session={session}
               onSendPrompt={handleSendPromptFromCompanion}
               terminalOutput={outputBuffer}
             />

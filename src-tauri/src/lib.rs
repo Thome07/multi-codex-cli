@@ -43,6 +43,7 @@ pub fn run() {
             commands::list_active_sessions,
             commands::get_settings,
             commands::update_settings,
+            commands::get_profile_messages,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

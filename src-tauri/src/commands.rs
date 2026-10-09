@@ -3,7 +3,7 @@ use crate::codex::{
     update_codex_cli_executable,
 };
 use crate::models::{
-    AppSettings, AuthStatus, CodexDetectionResult, CodexUpdateResult, CreateProfileRequest, Profile,
+    AppSettings, AuthStatus, ChatMessage, CodexDetectionResult, CodexUpdateResult, CreateProfileRequest, Profile,
     ProfileSummary, SessionInfo, UpdateProfileRequest,
 };
 use crate::paths::{ensure_secure_dir, get_profile_codex_home, get_profile_dir, validate_working_dir};
@@ -370,4 +370,82 @@ pub fn get_settings() -> Result<AppSettings, String> {
 #[tauri::command]
 pub fn update_settings(settings: AppSettings) -> Result<(), String> {
     save_settings(&settings)
+}
+
+#[tauri::command]
+pub fn get_profile_messages(profile_id: String) -> Result<Vec<ChatMessage>, String> {
+    let codex_home = get_profile_codex_home(&profile_id);
+    let db_path = std::path::PathBuf::from(&codex_home).join("thread_history_1.sqlite");
+
+    if !db_path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let output = std::process::Command::new("sqlite3")
+        .arg("-json")
+        .arg(&db_path)
+        .arg("SELECT item_id, item_type, item_json, created_at_ms FROM thread_items ORDER BY created_at_ms ASC;")
+        .output()
+        .map_err(|e| format!("Falha ao consultar histórico: {}", e))?;
+
+    if !output.status.success() {
+        return Ok(Vec::new());
+    }
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    if stdout.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+
+    #[derive(serde::Deserialize)]
+    struct SqliteRow {
+        item_id: String,
+        item_type: String,
+        item_json: String,
+        created_at_ms: i64,
+    }
+
+    let rows: Vec<SqliteRow> = serde_json::from_str(&stdout).unwrap_or_default();
+    let mut messages = Vec::new();
+
+    for row in rows {
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&row.item_json) {
+            if row.item_type == "userMessage" {
+                let mut full_text = String::new();
+                if let Some(content) = v.get("content").and_then(|c| c.as_array()) {
+                    for item in content {
+                        if item.get("type").and_then(|t| t.as_str()) == Some("text") {
+                            if let Some(txt) = item.get("text").and_then(|t| t.as_str()) {
+                                if !full_text.is_empty() {
+                                    full_text.push('\n');
+                                }
+                                full_text.push_str(txt);
+                            }
+                        }
+                    }
+                }
+                if !full_text.is_empty() {
+                    messages.push(ChatMessage {
+                        id: row.item_id,
+                        role: "user".to_string(),
+                        text: full_text,
+                        timestamp_ms: row.created_at_ms,
+                    });
+                }
+            } else if row.item_type == "agentMessage" {
+                if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
+                    if !text.is_empty() {
+                        messages.push(ChatMessage {
+                            id: row.item_id,
+                            role: "assistant".to_string(),
+                            text: text.to_string(),
+                            timestamp_ms: row.created_at_ms,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(messages)
 }
