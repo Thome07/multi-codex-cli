@@ -53,9 +53,20 @@ impl PtyManager {
             .map_err(|e| format!("Falha ao alocar pseudo-terminal (PTY): {}", e))?;
 
         let mut cmd = CommandBuilder::new(&codex_bin);
-        if let Some(args) = custom_args {
-            for arg in args {
-                cmd.arg(arg);
+        if is_login_session {
+            if let Some(args) = custom_args {
+                for arg in args {
+                    cmd.arg(arg);
+                }
+            }
+        } else {
+            cmd.arg("--no-daemon");
+            if let Some(args) = custom_args {
+                for arg in args {
+                    if arg != "--no-daemon" {
+                        cmd.arg(arg);
+                    }
+                }
             }
         }
 
@@ -63,6 +74,10 @@ impl PtyManager {
         cmd.env("CODEX_HOME", &codex_home);
         cmd.env("TERM", "xterm-256color");
         cmd.env("COLORTERM", "truecolor");
+        cmd.env("FORCE_COLOR", "3");
+        cmd.env("CLICOLOR_FORCE", "1");
+        cmd.env("LANG", std::env::var("LANG").unwrap_or_else(|_| "pt_BR.UTF-8".to_string()));
+        cmd.env("LC_ALL", std::env::var("LC_ALL").unwrap_or_else(|_| "pt_BR.UTF-8".to_string()));
 
         // Inherit PATH and user home
         if let Ok(path) = std::env::var("PATH") {
