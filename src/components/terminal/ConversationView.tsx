@@ -7,6 +7,7 @@ import {
   Clock,
   Sparkles,
 } from "lucide-react";
+import { marked } from "marked";
 import { api } from "../../services/api";
 import type { ChatMessage, SessionInfo } from "../../types";
 import { CodeBlock } from "./CodeBlock";
@@ -26,7 +27,7 @@ interface ContentPart {
 
 function parseMessageContent(rawText: string): ContentPart[] {
   const parts: ContentPart[] = [];
-  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g;
+  const codeBlockRegex = /```([a-zA-Z0-9_-]*)\r?\n([\s\S]*?)```/g;
   let lastIndex = 0;
   let match: RegExpExecArray | null;
 
@@ -64,25 +65,24 @@ function parseMessageContent(rawText: string): ContentPart[] {
   return parts;
 }
 
-// Format inline code `code` in text chunks
-function renderFormattedText(text: string) {
-  const segments = text.split(/(`[^`]+`)/g);
-
-  return segments.map((seg, idx) => {
-    if (seg.startsWith("`") && seg.endsWith("`")) {
-      const code = seg.slice(1, -1);
-      return (
-        <code
-          key={idx}
-          className="px-1.5 py-0.5 mx-0.5 text-[12px] font-mono rounded bg-[#1e2333] text-pink-300 border border-pink-500/20 font-semibold"
-        >
-          {code}
-        </code>
-      );
+// Render rich markdown content (tables, bold, italics, inline code, lists, etc.)
+const MarkdownContent: React.FC<{ content: string }> = ({ content }) => {
+  const html = useMemo(() => {
+    try {
+      return marked.parse(content, { gfm: true, breaks: true }) as string;
+    } catch (e) {
+      console.error("Erro ao converter markdown:", e);
+      return content;
     }
-    return <span key={idx}>{seg}</span>;
-  });
-}
+  }, [content]);
+
+  return (
+    <div
+      className="markdown-content text-[13px] leading-relaxed break-words"
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+};
 
 export const ConversationView: React.FC<ConversationViewProps> = ({
   session,
@@ -251,10 +251,10 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
 
             <div className="flex flex-wrap gap-2 justify-center max-w-lg pt-2">
               {[
+                "Crie uma tabela com produtos, quantidade e preço com negrito",
                 "Explique a arquitetura do projeto atual",
-                "Quais arquivos estão modificados no git status?",
                 "Escreva uma função Rust para ler arquivos com tratamento de erro",
-                "Crie um componente React em TypeScript com Tailwind",
+                "Quais arquivos estão modificados no git status?",
               ].map((suggestion, i) => (
                 <button
                   key={i}
@@ -314,7 +314,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                       : "bg-[#11141e] text-zinc-100 border border-[#262c3e] rounded-tl-xs"
                   }`}
                 >
-                  <div className="space-y-2 text-[13px] leading-relaxed break-words whitespace-pre-wrap">
+                  <div className="space-y-2 text-[13px] leading-relaxed break-words">
                     {parts.map((part, pIdx) => {
                       if (part.type === "code") {
                         return (
@@ -326,9 +326,7 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
                         );
                       }
                       return (
-                        <div key={pIdx} className="leading-relaxed">
-                          {renderFormattedText(part.content)}
-                        </div>
+                        <MarkdownContent key={pIdx} content={part.content} />
                       );
                     })}
                   </div>
