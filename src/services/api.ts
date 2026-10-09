@@ -4,6 +4,7 @@ import type {
   AppSettings,
   AuthStatus,
   CodexDetectionResult,
+  CodexUpdateResult,
   CreateProfileRequest,
   Profile,
   ProfileSummary,
@@ -14,10 +15,16 @@ import type {
 } from "../types";
 
 export const api = {
-  // Detection
+  // Detection & Update
   detectCodex: async (overridePath?: string): Promise<CodexDetectionResult> => {
     return await invoke<CodexDetectionResult>("detect_codex", {
       stateSettings: overridePath || null,
+    });
+  },
+
+  updateCodexCli: async (sudoPassword?: string): Promise<CodexUpdateResult> => {
+    return await invoke<CodexUpdateResult>("update_codex_cli", {
+      sudoPassword: sudoPassword || null,
     });
   },
 

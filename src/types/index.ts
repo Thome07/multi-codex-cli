@@ -70,12 +70,27 @@ export interface SessionInfo {
   title: string;
 }
 
+export interface CodexBinaryInfo {
+  path: string;
+  version?: string | null;
+  isActive: boolean;
+}
+
 export interface CodexDetectionResult {
   found: boolean;
   path?: string | null;
   version?: string | null;
   isOfficial: boolean;
   error?: string | null;
+  allCandidates?: CodexBinaryInfo[];
+}
+
+export interface CodexUpdateResult {
+  success: boolean;
+  oldVersion?: string | null;
+  newVersion?: string | null;
+  message: string;
+  path?: string | null;
 }
 
 export interface PtyOutputPayload {

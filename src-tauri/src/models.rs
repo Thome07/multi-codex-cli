@@ -107,12 +107,32 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct CodexBinaryInfo {
+    pub path: String,
+    pub version: Option<String>,
+    pub is_active: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct CodexDetectionResult {
     pub found: bool,
     pub path: Option<String>,
     pub version: Option<String>,
     pub is_official: bool,
     pub error: Option<String>,
+    #[serde(default)]
+    pub all_candidates: Vec<CodexBinaryInfo>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CodexUpdateResult {
+    pub success: bool,
+    pub old_version: Option<String>,
+    pub new_version: Option<String>,
+    pub message: String,
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

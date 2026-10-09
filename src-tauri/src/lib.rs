@@ -26,6 +26,7 @@ pub fn run() {
         .manage(app_state)
         .invoke_handler(tauri::generate_handler![
             commands::detect_codex,
+            commands::update_codex_cli,
             commands::get_profiles,
             commands::get_profile,
             commands::create_profile,

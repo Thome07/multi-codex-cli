@@ -41,7 +41,13 @@ export function App() {
   const [editingProfile, setEditingProfile] = useState<Profile | null>(null);
   const [deletingProfile, setDeletingProfile] = useState<Profile | null>(null);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsInitialTab, setSettingsInitialTab] = useState<"terminal" | "codex" | "general">("terminal");
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
+
+  const handleOpenSettings = (tab?: "terminal" | "codex" | "general") => {
+    setSettingsInitialTab(tab || "terminal");
+    setIsSettingsOpen(true);
+  };
 
   // Initial data loading
   const refreshProfiles = useCallback(async () => {
@@ -247,7 +253,7 @@ export function App() {
         }}
         onDuplicateProfile={handleDuplicateProfile}
         onDeleteProfile={(p) => setDeletingProfile(p)}
-        onOpenSettings={() => setIsSettingsOpen(true)}
+        onOpenSettings={handleOpenSettings}
         onOpenPalette={() => setIsPaletteOpen(true)}
       />
 
@@ -312,6 +318,7 @@ export function App() {
         isOpen={isSettingsOpen}
         settings={settings}
         detection={detection}
+        initialTab={settingsInitialTab}
         onClose={() => setIsSettingsOpen(false)}
         onSave={async (s) => {
           await api.updateSettings(s);

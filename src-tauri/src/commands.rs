@@ -1,7 +1,10 @@
-use crate::codex::{check_profile_auth_status, detect_codex_cli, find_codex_binary, logout_profile_session};
+use crate::codex::{
+    check_profile_auth_status, detect_codex_cli, find_codex_binary, logout_profile_session,
+    update_codex_cli_executable,
+};
 use crate::models::{
-    AppSettings, AuthStatus, CodexDetectionResult, CreateProfileRequest, Profile, ProfileSummary,
-    SessionInfo, UpdateProfileRequest,
+    AppSettings, AuthStatus, CodexDetectionResult, CodexUpdateResult, CreateProfileRequest, Profile,
+    ProfileSummary, SessionInfo, UpdateProfileRequest,
 };
 use crate::paths::{ensure_secure_dir, get_profile_codex_home, get_profile_dir, validate_working_dir};
 use crate::persistence::{load_profiles, load_settings, save_profiles, save_settings};
@@ -19,6 +22,11 @@ pub fn detect_codex(state_settings: Option<String>) -> CodexDetectionResult {
     let settings = load_settings().unwrap_or_default();
     let custom_path = state_settings.or(settings.codex_path);
     detect_codex_cli(custom_path.as_deref())
+}
+
+#[tauri::command]
+pub fn update_codex_cli(sudo_password: Option<String>) -> Result<CodexUpdateResult, String> {
+    Ok(update_codex_cli_executable(sudo_password.as_deref()))
 }
 
 #[tauri::command]

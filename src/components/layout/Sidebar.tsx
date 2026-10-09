@@ -13,6 +13,7 @@ import {
   Cpu,
   Search,
   Terminal,
+  ArrowUpCircle,
 } from "lucide-react";
 import type { CodexDetectionResult, Profile, ProfileSummary } from "../../types";
 import { StatusBadge } from "../common/StatusBadge";
@@ -29,7 +30,7 @@ interface SidebarProps {
   onEditProfile: (profile: Profile) => void;
   onDuplicateProfile: (profileId: string) => void;
   onDeleteProfile: (profile: Profile) => void;
-  onOpenSettings: () => void;
+  onOpenSettings: (tab?: "terminal" | "codex" | "general") => void;
   onOpenPalette: () => void;
 }
 
@@ -281,19 +282,30 @@ export const Sidebar: React.FC<SidebarProps> = ({
 
       {/* Footer */}
       <div className="p-3 border-t border-[#202430] bg-[#101217] text-xs space-y-2">
-        <div className="flex items-center justify-between text-zinc-500 font-mono text-[11px]">
-          <span className="flex items-center gap-1.5 truncate">
-            <Cpu className="w-3 h-3 text-zinc-400" />
+        <div className="flex items-center justify-between text-zinc-500 font-mono text-[11px] px-0.5">
+          <button
+            onClick={() => onOpenSettings("codex")}
+            className="flex items-center gap-1.5 truncate hover:text-zinc-300 transition text-left cursor-pointer"
+            title="Clique para gerenciar e atualizar o Codex CLI"
+          >
+            <Cpu className="w-3 h-3 text-blue-400" />
             <span className="truncate">
               {detection?.version ? detection.version.replace("codex-cli", "").trim() : "Codex CLI"}
             </span>
-          </span>
-          <span className="w-2 h-2 rounded-full bg-emerald-400" title="CLI detectado" />
+          </button>
+          <button
+            onClick={() => onOpenSettings("codex")}
+            className="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 font-sans hover:underline cursor-pointer"
+            title="Atualizar OpenAI Codex CLI"
+          >
+            <ArrowUpCircle className="w-3 h-3" />
+            <span>Atualizar</span>
+          </button>
         </div>
 
         <button
-          onClick={onOpenSettings}
-          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#161820] hover:bg-zinc-800 text-zinc-300 hover:text-white border border-[#252936] transition"
+          onClick={() => onOpenSettings()}
+          className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-lg bg-[#161820] hover:bg-zinc-800 text-zinc-300 hover:text-white border border-[#252936] transition cursor-pointer"
         >
           <span className="flex items-center gap-2 text-xs">
             <Sliders className="w-3.5 h-3.5 text-zinc-400" />
