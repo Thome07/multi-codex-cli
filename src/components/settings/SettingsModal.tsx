@@ -400,6 +400,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     </div>
                   </div>
 
+                  {isUpdating && (
+                    <div className="flex items-center gap-2.5 p-2.5 rounded-lg bg-blue-950/25 border border-blue-800/30 text-blue-300 text-xs animate-pulse">
+                      <RefreshCw className="w-3.5 h-3.5 animate-spin text-blue-400 shrink-0" />
+                      <span>Executando <code>sudo npm install -g @openai/codex@latest</code> em segundo plano... Isso costuma levar alguns segundos.</span>
+                    </div>
+                  )}
+
                   {updateResult && (
                     <div className="p-3 rounded-lg bg-emerald-950/30 border border-emerald-800/40 text-emerald-300 text-xs flex items-start gap-2 animate-in fade-in">
                       <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />

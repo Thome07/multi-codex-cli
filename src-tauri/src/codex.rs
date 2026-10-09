@@ -183,7 +183,7 @@ pub fn update_codex_cli_executable(sudo_password: Option<&str>) -> CodexUpdateRe
 
     // 1. Run sudo npm install -g @openai/codex@latest
     let child_res = Command::new("sudo")
-        .args(["-S", "npm", "install", "-g", "@openai/codex@latest"])
+        .args(["-S", "-p", "", "npm", "install", "-g", "@openai/codex@latest"])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -205,6 +205,7 @@ pub fn update_codex_cli_executable(sudo_password: Option<&str>) -> CodexUpdateRe
     if let Some(mut stdin) = child.stdin.take() {
         use std::io::Write;
         let _ = writeln!(stdin, "{}", password);
+        let _ = stdin.flush();
     }
 
     let output = match child.wait_with_output() {
@@ -222,22 +223,25 @@ pub fn update_codex_cli_executable(sudo_password: Option<&str>) -> CodexUpdateRe
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let detail = if !stderr.trim().is_empty() { stderr } else { stdout };
         return CodexUpdateResult {
             success: false,
             old_version,
             new_version: None,
-            message: format!("Falha na atualização do npm via sudo: {}", stderr),
+            message: format!("Falha na atualização do npm via sudo: {}", detail),
             path: old_detection.path,
         };
     }
 
-    // 2. Also update ~/.local if present, so both copies remain identical
+    // 2. Point ~/.local/bin/codex directly to /usr/local/bin/codex via symlink for instant synchronization
     if let Some(home) = dirs::home_dir() {
         let user_bin = home.join(".local").join("bin").join("codex");
-        if user_bin.is_file() {
-            let _ = Command::new("npm")
-                .args(["--prefix", home.join(".local").to_string_lossy().as_ref(), "install", "-g", "@openai/codex@latest"])
-                .output();
+        let sys_bin = PathBuf::from("/usr/local/bin/codex");
+        if sys_bin.is_file() {
+            let _ = std::fs::remove_file(&user_bin);
+            #[cfg(unix)]
+            let _ = std::os::unix::fs::symlink(&sys_bin, &user_bin);
         }
     }
 

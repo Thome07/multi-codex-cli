@@ -25,8 +25,12 @@ pub fn detect_codex(state_settings: Option<String>) -> CodexDetectionResult {
 }
 
 #[tauri::command]
-pub fn update_codex_cli(sudo_password: Option<String>) -> Result<CodexUpdateResult, String> {
-    Ok(update_codex_cli_executable(sudo_password.as_deref()))
+pub async fn update_codex_cli(sudo_password: Option<String>) -> Result<CodexUpdateResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        update_codex_cli_executable(sudo_password.as_deref())
+    })
+    .await
+    .map_err(|e| format!("Erro na tarefa assíncrona de atualização: {}", e))
 }
 
 #[tauri::command]
