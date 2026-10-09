@@ -89,18 +89,45 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
   onSendPrompt,
   terminalOutput,
 }) => {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [serverMessages, setServerMessages] = useState<ChatMessage[]>([]);
+  const [pending, setPending] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [inputPrompt, setInputPrompt] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [autoScroll, setAutoScroll] = useState(true);
 
-  // Load message history from SQLite database
+  // Mensagens exibidas = histórico gravado pelo Codex + mensagens ainda não confirmadas.
+  // Uma mensagem pendente some somente quando o Codex a grava no histórico (mesmo texto).
+  const messages = useMemo(() => {
+    const now = Date.now();
+    const unconfirmed = pending.filter((p) => {
+      if (now - p.timestampMs > 10 * 60 * 1000) return false;
+      return !serverMessages.some(
+        (m) =>
+          m.role === "user" &&
+          m.text.trim() === p.text.trim() &&
+          m.timestampMs >= p.timestampMs - 15000
+      );
+    });
+    return [...serverMessages, ...unconfirmed];
+  }, [serverMessages, pending]);
+
+  const fetchMessages = async () => {
+    const latest = await api.getProfileMessages(session.profileId);
+    setServerMessages((prev) => {
+      const a = prev[prev.length - 1];
+      const b = latest[latest.length - 1];
+      if (prev.length === latest.length && a?.id === b?.id && a?.text === b?.text) {
+        return prev;
+      }
+      return latest;
+    });
+  };
+
   const loadMessages = async () => {
     try {
       setLoading(true);
-      const res = await api.getProfileMessages(session.profileId);
-      setMessages(res);
+      await fetchMessages();
     } catch (err) {
       console.error("Falha ao carregar histórico de mensagens:", err);
     } finally {
@@ -112,52 +139,29 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     loadMessages();
   }, [session.profileId]);
 
-  // Check if we are waiting for Codex to answer
+  // Aguardando resposta: última mensagem exibida é do usuário
   const isWaitingResponse = useMemo(() => {
     if (messages.length === 0) return false;
-    const lastMsg = messages[messages.length - 1];
-    return lastMsg.role === "user";
+    return messages[messages.length - 1].role === "user";
   }, [messages]);
 
-  // Periodic poll to catch newly stored Codex messages (every 1s if waiting, 3s otherwise)
+  // Poll: 1s enquanto aguarda resposta, 3s caso contrário
   useEffect(() => {
-    const pollInterval = isWaitingResponse ? 1000 : 3000;
-    const interval = setInterval(() => {
-      api.getProfileMessages(session.profileId)
-        .then((latest) => {
-          if (latest && latest.length > 0) {
-            setMessages((prev) => {
-              // If there are more messages or content changed
-              if (
-                latest.length !== prev.length ||
-                latest[latest.length - 1]?.id !== prev[prev.length - 1]?.id ||
-                latest[latest.length - 1]?.text !== prev[prev.length - 1]?.text
-              ) {
-                return latest;
-              }
-              return prev;
-            });
-          }
-        })
-        .catch(() => {});
-    }, pollInterval);
-
+    const interval = setInterval(
+      () => {
+        fetchMessages().catch(() => {});
+      },
+      isWaitingResponse ? 1000 : 3000
+    );
     return () => clearInterval(interval);
   }, [session.profileId, isWaitingResponse]);
 
-  // Auto-refresh when terminal output receives activity
+  // Atualiza logo após atividade do terminal
   useEffect(() => {
     if (!terminalOutput) return;
     const timer = setTimeout(() => {
-      api.getProfileMessages(session.profileId)
-        .then((latest) => {
-          if (latest && latest.length > 0) {
-            setMessages(latest);
-          }
-        })
-        .catch(() => {});
+      fetchMessages().catch(() => {});
     }, 800);
-
     return () => clearTimeout(timer);
   }, [terminalOutput, session.profileId]);
 
@@ -173,15 +177,16 @@ export const ConversationView: React.FC<ConversationViewProps> = ({
     if (!text) return;
     onSendPrompt(text);
     setInputPrompt("");
-
-    // Optimistically add user message to the UI
-    const optimisticMessage: ChatMessage = {
-      id: "opt-" + Date.now(),
-      role: "user",
-      text: text,
-      timestampMs: Date.now(),
-    };
-    setMessages((prev) => [...prev, optimisticMessage]);
+    setPending((prev) => [
+      ...prev,
+      {
+        id: "pending-" + Date.now(),
+        role: "user",
+        text,
+        timestampMs: Date.now(),
+      },
+    ]);
+    setAutoScroll(true);
   };
 
   const formatTimestamp = (timestampMs: number) => {

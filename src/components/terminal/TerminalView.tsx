@@ -253,14 +253,21 @@ export const TerminalView: React.FC<TerminalViewProps> = ({
     setTimeout(() => setCopiedAll(false), 2000);
   };
 
-  const handleSendPromptFromCompanion = (prompt: string) => {
+  const handleSendPromptFromCompanion = async (prompt: string) => {
     const text = prompt.trim();
     if (!text) return;
-    // Em terminais Linux PTY / TUI interativo, o caractere de aceitação do Enter é '\r'
-    const formatted = text.replace(/\r?\n/g, "\n") + "\r";
-    api.writeSession(session.id, formatted).catch((e) => {
+    try {
+      // Multi-linha: usa bracketed paste para que as quebras não enviem a mensagem
+      const body = text.includes("\n")
+        ? "\x1b[200~" + text.replace(/\r?\n/g, "\n") + "\x1b[201~"
+        : text;
+      await api.writeSession(session.id, body);
+      // Enter separado, após a TUI processar o texto (evita ser tratado como colagem)
+      await new Promise((r) => setTimeout(r, 120));
+      await api.writeSession(session.id, "\r");
+    } catch (e) {
       console.error("Falha ao enviar prompt para o PTY:", e);
-    });
+    }
   };
 
   const handleThemeChange = (themeId: string) => {

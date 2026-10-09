@@ -372,80 +372,107 @@ pub fn update_settings(settings: AppSettings) -> Result<(), String> {
     save_settings(&settings)
 }
 
-#[tauri::command]
-pub fn get_profile_messages(profile_id: String) -> Result<Vec<ChatMessage>, String> {
-    let codex_home = get_profile_codex_home(&profile_id);
-    let db_path = std::path::PathBuf::from(&codex_home).join("thread_history_1.sqlite");
-
-    if !db_path.exists() {
-        return Ok(Vec::new());
+fn collect_rollout_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_rollout_files(&path, out);
+        } else if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n.starts_with("rollout-") && n.ends_with(".jsonl"))
+            .unwrap_or(false)
+        {
+            out.push(path);
+        }
     }
+}
 
-    let output = std::process::Command::new("sqlite3")
-        .arg("-json")
-        .arg(&db_path)
-        .arg("SELECT item_id, item_type, item_json, created_at_ms FROM thread_items ORDER BY created_at_ms ASC;")
-        .output()
-        .map_err(|e| format!("Falha ao consultar histórico: {}", e))?;
-
-    if !output.status.success() {
-        return Ok(Vec::new());
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    if stdout.trim().is_empty() {
-        return Ok(Vec::new());
-    }
-
-    #[derive(serde::Deserialize)]
-    struct SqliteRow {
-        item_id: String,
-        item_type: String,
-        item_json: String,
-        created_at_ms: i64,
-    }
-
-    let rows: Vec<SqliteRow> = serde_json::from_str(&stdout).unwrap_or_default();
-    let mut messages = Vec::new();
-
-    for row in rows {
-        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&row.item_json) {
-            if row.item_type == "userMessage" {
-                let mut full_text = String::new();
-                if let Some(content) = v.get("content").and_then(|c| c.as_array()) {
-                    for item in content {
-                        if item.get("type").and_then(|t| t.as_str()) == Some("text") {
-                            if let Some(txt) = item.get("text").and_then(|t| t.as_str()) {
-                                if !full_text.is_empty() {
-                                    full_text.push('\n');
-                                }
-                                full_text.push_str(txt);
-                            }
-                        }
+fn joined_content_text(item: &serde_json::Value) -> String {
+    let mut full = String::new();
+    if let Some(content) = item.get("content").and_then(|c| c.as_array()) {
+        for part in content {
+            let is_text = part
+                .get("type")
+                .and_then(|t| t.as_str())
+                .map(|t| t.eq_ignore_ascii_case("text"))
+                .unwrap_or(false);
+            if is_text {
+                if let Some(txt) = part.get("text").and_then(|t| t.as_str()) {
+                    if !full.is_empty() {
+                        full.push('\n');
                     }
-                }
-                if !full_text.is_empty() {
-                    messages.push(ChatMessage {
-                        id: row.item_id,
-                        role: "user".to_string(),
-                        text: full_text,
-                        timestamp_ms: row.created_at_ms,
-                    });
-                }
-            } else if row.item_type == "agentMessage" {
-                if let Some(text) = v.get("text").and_then(|t| t.as_str()) {
-                    if !text.is_empty() {
-                        messages.push(ChatMessage {
-                            id: row.item_id,
-                            role: "assistant".to_string(),
-                            text: text.to_string(),
-                            timestamp_ms: row.created_at_ms,
-                        });
-                    }
+                    full.push_str(txt);
                 }
             }
         }
     }
+    full
+}
 
+/// Lê o histórico de conversa dos arquivos de sessão do Codex
+/// (`CODEX_HOME/sessions/**/rollout-*.jsonl`), que é onde o CLI realmente grava
+/// as mensagens (UserMessage / AgentMessage em eventos `item_completed`).
+#[tauri::command]
+pub fn get_profile_messages(profile_id: String) -> Result<Vec<ChatMessage>, String> {
+    let codex_home = get_profile_codex_home(&profile_id);
+    let sessions_dir = std::path::PathBuf::from(&codex_home).join("sessions");
+    if !sessions_dir.exists() {
+        return Ok(Vec::new());
+    }
+
+    let mut files = Vec::new();
+    collect_rollout_files(&sessions_dir, &mut files);
+    files.sort();
+
+    let mut messages: Vec<ChatMessage> = Vec::new();
+
+    for file in files {
+        let Ok(content) = std::fs::read_to_string(&file) else { continue };
+        for line in content.lines() {
+            if line.trim().is_empty() || !line.contains("item_completed") {
+                continue;
+            }
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else { continue };
+            if v.get("type").and_then(|t| t.as_str()) != Some("event_msg") {
+                continue;
+            }
+            let Some(payload) = v.get("payload") else { continue };
+            if payload.get("type").and_then(|t| t.as_str()) != Some("item_completed") {
+                continue;
+            }
+            let Some(item) = payload.get("item") else { continue };
+            let item_type = item.get("type").and_then(|t| t.as_str()).unwrap_or("");
+            let role = match item_type {
+                "UserMessage" => "user",
+                "AgentMessage" => "assistant",
+                _ => continue,
+            };
+            let text = joined_content_text(item);
+            if text.trim().is_empty() {
+                continue;
+            }
+            let ts = v
+                .get("timestamp")
+                .and_then(|t| t.as_str())
+                .and_then(|t| chrono::DateTime::parse_from_rfc3339(t).ok())
+                .map(|d| d.timestamp_millis())
+                .unwrap_or(0);
+            let id = item
+                .get("id")
+                .and_then(|i| i.as_str())
+                .unwrap_or("")
+                .to_string();
+            messages.push(ChatMessage {
+                id,
+                role: role.to_string(),
+                text,
+                timestamp_ms: ts,
+            });
+        }
+    }
+
+    messages.sort_by_key(|m| m.timestamp_ms);
     Ok(messages)
 }
